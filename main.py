@@ -1,97 +1,66 @@
-# Ilir Bejleri
-# Black-Scholes model implementation into live tickers for stocks
+#Ilir Bejleri
 
-import numpy as np
-from scipy.stats import norm
-import argparse
-import requests
-from datetime import date
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
-import pandas as pd
-from flask import Flask, jsonify
-import threading
+from math import exp, sqrt, log
+from scipy.stats import norm
+import numpy as np
 import time
 
-# Argument Parser Setup
-parser = argparse.ArgumentParser()
-parser.add_argument('ticker', type=str, help='Stock ticker symbol')
-parser.add_argument('years', type=float, help='Number of years (can be fractional)')
-parser.add_argument('PutOrCall', type=str, choices=['put', 'call'], help='Specify if option is a put or call')
-parser.add_argument('strikePrice', type=float, help='Strike price of the option')
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
-args = parser.parse_args()
-ticker = args.ticker
-years = args.years
-put_or_call = args.PutOrCall.lower()  # Ensure lower case
-strikePrice = args.strikePrice
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Debug: Print parsed arguments
-print(f'Parsed arguments: ticker={ticker}, years={years}, put_or_call={put_or_call}, strikePrice={strikePrice}')
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
-# FRED API Setup (assuming you have the API key)
-api_key = ''  # Add your FRED API key here
-series_id = 'DGS1MO'
-url = f'https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json&sort_order=desc&limit=1'
+@app.get("/derivatives")
+async def get_derivatives(ticker: str):
+    data = yf.Ticker(ticker)
+    try:
+        price = data.history(period="1d")["Close"].iloc[-1]
+    except:
+        return {"error": "Invalid ticker or no price data"}
 
-response = requests.get(url)
-data = response.json()
+    S = float(price)     # Spot price
+    K = S * 1.05         # Strike price
+    T = 1                # 1 year until maturity
+    r = 0.05             # Risk-free rate
+    sigma = 0.2          # Volatility
+    q = 0.01             # Convenience yield / dividend yield
 
-if 'observations' in data and len(data['observations']) > 0:
-    most_recent_observation = data['observations'][0]
-    observation_date = most_recent_observation['date']
-    yield_value = most_recent_observation['value']
-    interestRate = float(yield_value) / 100.0
-    print(f'Interest rate retrieved: {interestRate * 100:.2f}% on {observation_date}')
-else:
-    print("No data available for the interest rate.")
-    interestRate = 0.01  # Fallback interest rate
+    # Futures Price
+    futures = S * exp((r - q) * T)
 
-# Black-Scholes Model Functions
-def callBlackScholes(underlyingAssetValue, strikePrice, timeLeft, sigma):
-    d1 = (np.log(underlyingAssetValue/strikePrice) + ((interestRate + (sigma**2)/2) * timeLeft)) / (sigma * np.sqrt(timeLeft))
-    d2 = d1 - sigma * np.sqrt(timeLeft)
-    return underlyingAssetValue * norm.cdf(d1, 0, 1) - strikePrice * np.exp(-interestRate * timeLeft) * norm.cdf(d2, 0, 1)
+    # Forward Price (discrete compounding)
+    forward = S * ((1 + r) ** T)
 
-def putBlackScholes(underlyingAssetValue, strikePrice, timeLeft, sigma):
-    d1 = (np.log(underlyingAssetValue/strikePrice) + ((interestRate + (sigma**2)/2) * timeLeft)) / (sigma * np.sqrt(timeLeft))
-    d2 = d1 - sigma * np.sqrt(timeLeft)
-    return strikePrice * np.exp(-interestRate * timeLeft) * norm.cdf(-d2, 0, 1) - underlyingAssetValue * norm.cdf(-d1, 0, 1)
+    # Black-Scholes European Call and Put
+    d1 = (log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * sqrt(T))
+    d2 = d1 - sigma * sqrt(T)
+    call = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
+    put = K * exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
-# Get Current Stock Price
-def get_stock_price():
-    stock = yf.Ticker(ticker)
-    return stock.history(period='1d', interval='1m')['Close'].iloc[-1]
+    # Swap fixed leg PV (simplified)
+    swap = (S - K) * exp(-r * T)
 
-# Calculate Historical Volatility (Sigma)
-def calculate_sigma():
-    end_date = pd.Timestamp.today()
-    start_date = end_date - pd.DateOffset(days=int(years * 365))
-    data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-    data['Log Return'] = np.log(data['Close'] / data['Close'].shift(1))
-    log_returns = data['Log Return'].dropna()
-    sigma = log_returns.std() * np.sqrt(252)
-    return sigma
+    return {
+        "spot_price": S,
+        "futures_price": futures,
+        "forward_price": forward,
+        "call_option_price": call,
+        "put_option_price": put,
+        "swap_price": swap,
+        "timestamp": time.time()
+    }
 
-# Flask App Setup
-app = Flask(__name__)
-current_option_price = None
-
-def update_option_price():
-    global current_option_price
-    while True:
-        stock_price = get_stock_price()
-        sigma = calculate_sigma()
-        if put_or_call == 'call':
-            current_option_price = callBlackScholes(stock_price, strikePrice, years, sigma)
-        else:
-            current_option_price = putBlackScholes(stock_price, strikePrice, years, sigma)
-        
-        time.sleep(2)
-
-@app.route('/ticker')
-def ticker_route():
-    return jsonify({'option_price': current_option_price})
-
-if __name__ == '__main__':
-    threading.Thread(target=update_option_price, daemon=True).start()
-    app.run(debug=True)
