@@ -1,15 +1,13 @@
 Ilir Bejleri
-Main idea: Create a live ticker for an options price based on a stock's changing price and the model's other factors. As a stock price changes, the ticker will change its price simultaneously. The user can select the stock and option contract details. 
+Main idea: Create a live ticker for an options price based on a stock's changing price and the model's other factors. As a stock price changes, the ticker will change its price simultaneously. Any ticker symbol on yahoo finance including commodities. 
 
+REQUIRED PROGRAMS:
+    pip install fastapi uvicorn numpy scipy
+    pip install --upgrade yfinance
 
 EXUECTION INSTRUCTIONS:
-put your FRED API key on line 32 of main.py.
-run main.py using the following arguments in this order: TICKER TimeToExpirationInYearsAsFloat CallOrPut StrikePrice
-look at port 5000/ticker for the option price
-
-example to get the Black-Scholes price for Apple stock call option expiring in 1 month with a strike price of 235:
-
-python main.py AAPL .08333  call 235
+Run
+    uvicorn main:app --reload
 
 
 Citations: 
