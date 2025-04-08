@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Commodity Derivatives</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f8;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #004085;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        .output {
+            margin-top: 30px;
+            background-color: #f9fbfc;
+            border-left: 4px solid #004085;
+            padding: 20px;
+            font-family: monospace;
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: #555;
+            margin-top: 10px;
+        }
+        .ticker-examples {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Live Commodity Derivative Prices</h1>
+        <label for="ticker">Commodity Ticker Symbol:</label>
+        <input type="text" id="ticker" value="GC=F" oninput="updateTicker()">
+        <div class="ticker-examples">
+            Try: GC=F (Gold), CL=F (Crude Oil), SI=F (Silver), NG=F (Natural Gas), ZC=F (Corn)
+        </div>
+        <div id="output" class="output">Loading...</div>
+    </div>
+
+    <script>
+        let currentTicker = "GC=F";
+
+        function fetchData() {
+            fetch(`/derivatives?ticker=${currentTicker}`)
+                .then(response => response.json())
+                .then(data => {
+                    const outputDiv = document.getElementById("output");
+                    if (data.error) {
+                        outputDiv.innerHTML = `<span style="color:red;">${data.error}</span>`;
+                        return;
+                    }
+
+                    outputDiv.innerHTML = `
+                        <strong>Spot Price:</strong> $${data.spot_price.toFixed(2)}<br>
+                        <strong>Futures Price:</strong> $${data.futures_price.toFixed(2)}<br>
+                        <strong>Forward Price:</strong> $${data.forward_price.toFixed(2)}<br>
+                        <strong>Call Option Price:</strong> $${data.call_option_price.toFixed(2)}<br>
+                        <strong>Put Option Price:</strong> $${data.put_option_price.toFixed(2)}<br>
+                        <strong>Swap Value:</strong> $${data.swap_price.toFixed(2)}<br>
+                        <div class="timestamp">Updated at ${new Date(data.timestamp * 1000).toLocaleTimeString()}</div>
+                    `;
+                })
+                .catch(error => {
+                    document.getElementById("output").innerHTML = `<span style="color:red;">Error: ${error.message}</span>`;
+                });
+        }
+
+        function updateTicker() {
+            currentTicker = document.getElementById("ticker").value.trim();
+            fetchData();
+        }
+
+        setInterval(fetchData, 1000);
+        fetchData();
+    </script>
+</body>
+</html>
